@@ -1,4 +1,4 @@
-module SigmoidalPrograming
+module SigmoidalProgramming
 
 include("sp.jl")
 include("functions.jl")
