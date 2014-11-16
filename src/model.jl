@@ -1,21 +1,30 @@
 using Convex
 
+import Base.sign
+export SigmoidalVexity, SumofSigmoidalVexity,
+	SigmoidalAtom, evaluate, sign, monotonicity, curvature, conic_form!,
+	logisticsigmoid, zerosigmoid,
+	solve_sp!
+
 type SigmoidalVexity <: Vexity            end
 type SumofSigmoidalVexity <: Vexity            end
 
 +(s::SigmoidalVexity, t::SigmoidalVexity) = SumofSigmoidalVexity()
++(s::SigmoidalVexity, t::ConvexVexity) = SumofSigmoidalVexity()
++(s::SigmoidalVexity, t::ConcaveVexity) = SumofSigmoidalVexity()
 +(s::SigmoidalVexity, t::SumofSigmoidalVexity) = SumofSigmoidalVexity()
 
 type SigmoidalAtom <: AbstractExpr
   head::Symbol
-  sigmoid::Sigmoid
+  sigmoid::SigmoidalFunction
   id_hash::Uint64
   children::(AbstractExpr,)
   size::(Int64, Int64)
 
-  function SigmoidalAtom(s::Sigmoid, x::AbstractExpr)
+  function SigmoidalAtom(s::SigmoidalFunction, x::AbstractExpr)
     if x.size!=(1,1)
     	error("The argument to a sigmoid must be univariate; got $x")
+    end
     children = (x,)
     return new(:sigmoid, s, hash(children), children, (1,1))
   end
@@ -48,23 +57,24 @@ end
 
 ## Particular sigmoids
 
-logistic(x::AbstractExpr) = SigmoidalAtom(Logistic(), x)
+logisticsigmoid(x::AbstractExpr) = SigmoidalAtom(Logistic(), x)
 zerosigmoid(x::AbstractExpr) = SigmoidalAtom(ZeroSigmoid(), x)
 
 ## Solve
 
-function solve_sp(problem::Problem, l, u; kwargs...)
+function solve_sp!(problem::Problem, l, u; kwargs...)
 
 	# check we have a sigmoidal program
-	if vexity(problem.objective) == SumofSigmoidalVexity() && 
-		all(Bool[vexity(c) == AffineVexity() for c in problem.constraints])
-		continue
-	else
-		error("Not a sigmoidal program")
+	if !(vexity(problem.objective) == SumofSigmoidalVexity()) || 
+		!all(Bool[vexity(c) == AffineVexity() for c in problem.constraints])
+			error("Not a sigmoidal program")
 	end
-
+	if problem.sense == :minimize
+		error("only sigmoidal maximization is supported for now")
+	end
+	
 	# children gives the expressions corresponding to the arguments to the sigmoids
-	sigmoids, children = gather_sigmoids(problem.objective)
+	sigmoids, children, constraints = gather_sigmoids(problem.objective)
 	problem.objective = Constant(0)
 
 	c, A, b, cones, var_to_ranges, vartypes = conic_problem(problem)
@@ -87,4 +97,28 @@ function solve_sp(problem::Problem, l, u; kwargs...)
 	# Populate the problem with the solution
 	problem.optval = lbs[end]
 	problem.status = problem.solution.status
+end
+
+function gather_sigmoids(obj::AbstractExpr)
+	if obj.head == :sigmoid
+		return [obj.sigmoid], [obj.children...], Constraint[]
+	elseif vexity(obj) == Convex() || vexity(obj) == Affine()
+		f = SigmoidalFunction(obj)
+		return [f], [obj.children...], Constraint[]
+	elseif vexity(obj) == Concave()
+		# add a new hypograph variable
+	elseif obj.head == :sum || obj.head == :+
+		s = SigmoidalFunction[]
+		c = AbstractExpr[]
+		constr = Constraint[]
+		for child in obj.children
+			si,ci,constri = gather_sigmoids(child) 
+			append!(s,si)
+			append!(c,ci)
+			append!(constr,constri)
+		end
+		return s,c,constr
+	else
+		error("$obj is not a sum of sigmoids")
+	end
 end
