@@ -32,7 +32,7 @@ LinearSP(fs::Array{Function,1},dfs::Array{Function,1},
          LinearSP(fs,dfs,z,A,b,zeros(0,length(fs)),zeros(0))
 
 function addConstraints!(m::Model, x, p::LinearSP)
-    # Ax == b
+    # Ax <= b
     nconstr, nvar = size(p.A)
     for i=1:nconstr
         @addConstraint(m, sum{p.A[i,j]*x[j], j=1:nvar} <= p.b[i])
