@@ -1,7 +1,9 @@
 module SigmoidalProgramming
 
+using JuMP
+
+include("problems.jl")
 include("sp.jl")
 include("functions.jl")
-include("problems.jl")
 
 end # module

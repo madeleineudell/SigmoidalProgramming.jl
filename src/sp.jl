@@ -3,10 +3,8 @@ using GLPKMathProgInterface
 import Base.Collections: PriorityQueue, enqueue!, dequeue!
 import Base.Order.Reverse
 
-## sigmoidal functions
-
-logistic(x) = 1/(1 + exp(-x))
-logistic_prime(x) = exp(-x)/(1 + exp(-x))^2        
+export solve_sp    
+export dequeue!
 
 ## utilities
 
@@ -43,40 +41,6 @@ function bisection(f, a, b, tol=1e-9, maxiters=1000)
     end
     warn("hit maximum iterations in bisection search")
     return (b-a)/2
-end
-
-## problem types
-abstract SigmoidalProgram
-
-type LinearProblem <: SigmoidalProgram
-    fs::Array{Function,1}
-    dfs::Array{Function,1}
-    z::Array{Float64,1}
-    A::Array{Float64,2}
-    b::Array{Float64,1}
-    C::Array{Float64,2}
-    d::Array{Float64,1}
-    function LinearProblem(fs,dfs,z,A,b,C,d)
-        nconstr, nvar = size(A)
-        @assert(length(b) == nconstr)
-        nconstr, nvar = size(C)
-        @assert(length(d) == nconstr)
-        @assert(length(fs) == nvar)
-        @assert(length(dfs) == nvar)
-        @assert(length(z) == nvar)
-        new(fs,dfs,z,A,b,C,d)
-    end
-end
-LinearProblem(fs,dfs,z,A,b) = LinearProblem(fs,dfs,z,A,b,zeros(0,length(fs)),zeros(0))
-function addConstraints!(m::Model, x, p::LinearProblem)
-    nconstr, nvar = size(p.A)
-    for i=1:nconstr
-        @addConstraint(m, sum{p.A[i,j]*x[j], j=1:nvar} <= p.b[i])
-    end
-    nconstr, nvar = size(p.C)
-    for i=1:nconstr
-        @addConstraint(m, sum{p.C[i,j]*x[j], j=1:nvar} == p.d[i])
-    end
 end
 
 ## maximize concave hull
