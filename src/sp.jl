@@ -152,16 +152,19 @@ end
 ## Branching rule
 function split(n::Node, problem::SigmoidalProgram, verbose=false; kwargs...)
     i = n.maxdiff_index
+    # split at x for x < z; otherwise split at z
+    # (this achieves tighter fits on both children when z < x < w)
+    splithere = min(n.x[i], problem.z[i])
     if verbose println("split on coordinate $i at $(n.x[i])") end
     # left child
     left_u = copy(n.u)
-    left_u[i] = n.x[i]
+    left_u[i] = splithere
     left_w = copy(n.w)
     left_w[i] = find_w(problem.fs[i],problem.dfs[i],n.l[i],left_u[i],problem.z[i])
     left = Node(n.l, left_u, left_w, problem; kwargs...)
     # right child
     right_l = copy(n.l)
-    right_l[i] = n.x[i]
+    right_l[i] = splithere
     right_w = copy(n.w)
     right_w[i] = find_w(problem.fs[i],problem.dfs[i],right_l[i],n.u[i],problem.z[i])
     right = Node(right_l, n.u, right_w, problem; kwargs...)

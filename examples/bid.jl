@@ -35,13 +35,14 @@ function bidding(nvar=500; problemtype=:paper)
     pq, bestnodes, lbs, ubs = @time solve_sp(l, u, problem, verbose=false; 
                                              TOL=nvar*1e-3, maxiters=1000)
     println("$(length(lbs)) iterations")
-    node = dequeue!(pq)
+    node = bestnodes[end] #dequeue!(pq)
     # println("best node has node.ub = $(node.ub) and solution $(node.x)")
-    println("lbs: ",lbs)
-    println("ubs: ",ubs)
+    println("lb: ",lbs[end])
+    println("ub: ",ubs[end])
+    println("ratio: ",(ubs[end]-lbs[end])/lbs[end])
 end
 
-for size=[1,100,500,1000,2000,5000,10000]
+for size=[1,10,20,50,100,500,1000,2000,5000,10000]
     println("bidding $size")
     bidding(size)
 end
