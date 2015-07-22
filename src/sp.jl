@@ -51,12 +51,13 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram, m = Model(solver=GLPK
     fs,dfs = problem.fs, problem.dfs
     
     # Define our variables to be inside a box
-    @defVar(m, t[i=1:nvar])
     @defVar(m, x[i=1:nvar])
     for i=1:nvar 
         setLower(x[i], l[i])
         setUpper(x[i], u[i])
     end
+    # epigraph variable
+    @defVar(m, t[i=1:nvar])
     # Require that t be in the hypograph of fhat, approximating as pwl function
     # At first, we add only the bit of fhat from l to w, and the tangent at u
     for i=1:nvar
