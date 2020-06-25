@@ -1,10 +1,10 @@
 using JuMP
-using GLPKMathProgInterface
-import Base.Collections: PriorityQueue, enqueue!, dequeue!
+using Base, GLPK, DataStructures
+import DataStructures: PriorityQueue, enqueue!, dequeue!
 import Base.Order.Reverse
 
 export solve_sp    
-export dequeue!
+
 
 ## utilities
 
@@ -44,20 +44,22 @@ function bisection(f, a, b, tol=1e-9, maxiters=1000)
 end
 
 ## maximize concave hull
-function maximize_fhat(l, u, w, problem::SigmoidalProgram, m = Model(solver=GLPKSolverLP()); 
+function maximize_fhat(l, u, w, problem::SigmoidalProgram,
+                       m = Model(optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF));
                        maxiters = 10, TOL = 1e-6, verbose=false)
     nvar = length(l)
     maxiters *= nvar
     fs,dfs = problem.fs, problem.dfs
     
     # Define our variables to be inside a box
-    @defVar(m, x[i=1:nvar])
+    @variable(m, x[i=1:nvar])
     for i=1:nvar 
-        setLower(x[i], l[i])
-        setUpper(x[i], u[i])
+        set_lower_bound(x[i], l[i])
+        set_upper_bound(x[i], u[i])
     end
     # epigraph variable
-    @defVar(m, t[i=1:nvar])
+    @variable(m, t[i=1:nvar])
+
     # Require that t be in the hypograph of fhat, approximating as pwl function
     # At first, we add only the bit of fhat from l to w, and the tangent at u
     for i=1:nvar
@@ -73,51 +75,58 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram, m = Model(solver=GLPK
     # Add other problem constraints
     addConstraints!(m, x, problem)
     
-    @setObjective(m, Max, sum(t))
+    @objective(m, Max, sum(t))
     
     # Now solve and add hypograph constraints until the solution stabilizes
-    status = solve(m)
-    for i=1:maxiters
-        x_val = getValue(x)
-        t_val = getValue(t)
-        
-        solved = true
-        
-        for i=1:length(x_val)
-            # Check if t is in the hypograph of f, allowing some tolerance
-            xi, ti = x_val[i], t_val[i]
-            if xi > w[i]
-                if ti > fs[i](xi) + TOL
-                    solved = false
-                    @addConstraint(m, t[i] <= fs[i](xi) + dfs[i](xi)*(x[i] - xi))
+    optimize!(m)
+    status = termination_status(m)
+
+    if status == MathOptInterface.TerminationStatusCode(1)
+        for i=1:maxiters
+            x_val = value.(x)
+            t_val = value.(t)
+
+            solved = true
+
+            for i=1:length(x_val)
+                # Check if t is in the hypograph of f, allowing some tolerance
+                xi, ti = x_val[i], t_val[i]
+                if xi > w[i]
+                    if ti > fs[i](xi) + TOL
+                        solved = false
+                        @constraint(m, t[i] <= fs[i](xi) + dfs[i](xi)*(x[i] - xi))
+                    end
                 end
             end
-        end   
-        if solved
-            if verbose println("solved problem to within $TOL in $i iterations") end
-            break
-        else
-            status = solve(m)
+            if solved
+                if verbose println("solved problem to within $TOL in $i iterations") end
+                break
+            else
+                optimize!(m)
+                status = termination_status(m)
+            end
         end
-    end
-    # refine t a bit to make sure it's really on the convex hull
-    t = zeros(nvar)
-    x_val = getValue(x)
-    for i=1:nvar
-        xi = x_val[i]
-        if xi >= w[i]
-            t[i] = fs[i](xi)
-        else
-            slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
-            offsetatl = fs[i](l[i])
-            t[i] = offsetatl + slopeatl*(xi - l[i])
+        # refine t a bit to make sure it's really on the convex hull
+        t = zeros(nvar)
+        x_val = value.(x)
+        for i=1:nvar
+            xi = x_val[i]
+            if xi >= w[i]
+                t[i] = fs[i](xi)
+            else
+                slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
+                offsetatl = fs[i](l[i])
+                t[i] = offsetatl + slopeatl*(xi - l[i])
+            end
         end
+        return x_val, t, status
+    else
+        return fill(-Inf, size(l)), fill(-Inf, size(l)), status
     end
-    return x_val, t, status
 end
 
 ## Nodes of the branch and bound tree
-type Node
+struct Node
     l::Array{Float64,1}
     u::Array{Float64,1}
     w::Array{Float64,1}
@@ -129,7 +138,7 @@ type Node
         nvar = length(l)
         # find upper and lower bounds
         x, t, status = maximize_fhat(l, u, w, problem; kwargs...)
-        if status==:Optimal
+        if status==MathOptInterface.TerminationStatusCode(1)
             s = Float64[problem.fs[i](x[i]) for i=1:nvar]
             ub = sum(t)
             lb = sum(s)
@@ -140,6 +149,7 @@ type Node
         new(l,u,w,x,lb,ub,maxdiff_index)
     end
 end
+
 function Node(l,u,problem::SigmoidalProgram; kwargs...)
     nvar = length(l)
     # find w
@@ -157,12 +167,14 @@ function split(n::Node, problem::SigmoidalProgram, verbose=false; kwargs...)
     # (this achieves tighter fits on both children when z < x < w)
     splithere = min(n.x[i], problem.z[i])
     if verbose println("split on coordinate $i at $(n.x[i])") end
+
     # left child
     left_u = copy(n.u)
     left_u[i] = splithere
     left_w = copy(n.w)
     left_w[i] = find_w(problem.fs[i],problem.dfs[i],n.l[i],left_u[i],problem.z[i])
     left = Node(n.l, left_u, left_w, problem; kwargs...)
+
     # right child
     right_l = copy(n.l)
     right_l[i] = splithere
@@ -186,7 +198,7 @@ function solve_sp(l, u, problem::SigmoidalProgram;
     push!(bestnodes,root)
     push!(ubs,root.ub)
     push!(lbs,root.lb)
-    pq = PriorityQueue(Node[root], Float64[root.ub], Reverse)
+    pq = PriorityQueue{Node, Float64}(Reverse)
     for i=1:maxiters
         if ubs[end] - lbs[end] < TOL 
             if verbose
@@ -197,6 +209,7 @@ function solve_sp(l, u, problem::SigmoidalProgram;
         node = dequeue!(pq)
         push!(ubs,min(node.ub, ubs[end]))
         left, right = split(node, problem; TOL=subtol)
+
         if left.lb > lbs[end] && left.lb >= right.lb
             push!(lbs,left.lb)
             push!(bestnodes,left)
@@ -209,6 +222,7 @@ function solve_sp(l, u, problem::SigmoidalProgram;
         if verbose
             println("(lb, ub) = ($(lbs[end]), $(ubs[end]))")
         end
+
         # prune infeasible or obviously suboptimal nodes
         if !isnan(left.ub) && left.ub >= lbs[end]
             enqueue!(pq, left, left.ub) 
