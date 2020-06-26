@@ -1,5 +1,5 @@
 using JuMP
-using Base, GLPK, DataStructures
+using Base, GLPK, DataStructures, MathOptInterface
 import DataStructures: PriorityQueue, enqueue!, dequeue!
 import Base.Order.Reverse
 
@@ -142,7 +142,7 @@ struct Node
             s = Float64[problem.fs[i](x[i]) for i=1:nvar]
             ub = sum(t)
             lb = sum(s)
-            maxdiff_index = indmax(t-s)
+            maxdiff_index = argmax(t-s)
         else
             ub = -Inf; lb = -Inf; maxdiff_index = 1
         end
@@ -199,6 +199,7 @@ function solve_sp(l, u, problem::SigmoidalProgram;
     push!(ubs,root.ub)
     push!(lbs,root.lb)
     pq = PriorityQueue{Node, Float64}(Reverse)
+    enqueue!(pq, root, root.ub)
     for i=1:maxiters
         if ubs[end] - lbs[end] < TOL 
             if verbose
