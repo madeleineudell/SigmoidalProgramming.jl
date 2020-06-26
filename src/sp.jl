@@ -66,11 +66,11 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
         if w[i] > l[i]
             slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
             offsetatl = fs[i](l[i])
-            @addConstraint(m, t[i] <= offsetatl + slopeatl*(x[i] - l[i]))
+            @constraint(m, t[i] <= offsetatl + slopeatl*(x[i] - l[i]))
         else
-            @addConstraint(m, t[i] <= fs[i](l[i]) + dfs[i](l[i])*(x[i] - l[i]))
+            @constraint(m, t[i] <= fs[i](l[i]) + dfs[i](l[i])*(x[i] - l[i]))
         end
-        @addConstraint(m, t[i] <= fs[i](u[i]) + dfs[i](u[i])*(x[i] - u[i]))
+        @constraint(m, t[i] <= fs[i](u[i]) + dfs[i](u[i])*(x[i] - u[i]))
     end
     # Add other problem constraints
     addConstraints!(m, x, problem)
