@@ -1,8 +1,10 @@
 ## Let's solve the bidding problem
 using SigmoidalProgramming
+using Random
 
 # problem data
-srand(4)
+Random.seed!(4)
+
 function bidding(nvar=500; problemtype=:paper)
     nconstr = 1
     l = fill(-10, nvar)
