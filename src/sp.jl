@@ -106,7 +106,7 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
                 status = termination_status(m)
             end
         else
-            return fill(-Inf, size(l)), fill(-Inf, size(l)), status
+            break
         end
     end
     # refine t a bit to make sure it's really on the convex hull
