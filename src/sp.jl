@@ -1,5 +1,5 @@
 using JuMP
-using Base, GLPK, DataStructures, MathOptInterface
+using Base, GLPK, DataStructures, MathOptInterface, DataFrames
 import DataStructures: PriorityQueue, enqueue!, dequeue!
 import Base.Order.Reverse
 
@@ -46,7 +46,7 @@ end
 ## maximize concave hull
 function maximize_fhat(l, u, w, problem::SigmoidalProgram,
                        m = Model(optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF));
-                       maxiters = 10, TOL = 1e-6, verbose=false)
+                       maxiters = 10, TOL = 1e-6, verbose=0)
     nvar = length(l)
     maxiters *= nvar
     fs,dfs = problem.fs, problem.dfs
@@ -81,8 +81,8 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
     optimize!(m)
     status = termination_status(m)
 
-    if status == MathOptInterface.TerminationStatusCode(1)
-        for i=1:maxiters
+    for i=1:maxiters
+        if status == MathOptInterface.OPTIMAL
             x_val = value.(x)
             t_val = value.(t)
 
@@ -99,30 +99,30 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
                 end
             end
             if solved
-                if verbose println("solved problem to within $TOL in $i iterations") end
+                if verbose>=2 println("solved problem to within $TOL in $i iterations") end
                 break
             else
                 optimize!(m)
                 status = termination_status(m)
             end
+        else
+            return fill(-Inf, size(l)), fill(-Inf, size(l)), status
         end
-        # refine t a bit to make sure it's really on the convex hull
-        t = zeros(nvar)
-        x_val = value.(x)
-        for i=1:nvar
-            xi = x_val[i]
-            if xi >= w[i]
-                t[i] = fs[i](xi)
-            else
-                slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
-                offsetatl = fs[i](l[i])
-                t[i] = offsetatl + slopeatl*(xi - l[i])
-            end
-        end
-        return x_val, t, status
-    else
-        return fill(-Inf, size(l)), fill(-Inf, size(l)), status
     end
+    # refine t a bit to make sure it's really on the convex hull
+    t = zeros(nvar)
+    x_val = value.(x)
+    for i=1:nvar
+        xi = x_val[i]
+        if xi >= w[i]
+            t[i] = fs[i](xi)
+        else
+            slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
+            offsetatl = fs[i](l[i])
+            t[i] = offsetatl + slopeatl*(xi - l[i])
+        end
+    end
+    return x_val, t, status
 end
 
 ## Nodes of the branch and bound tree
@@ -161,12 +161,12 @@ function Node(l,u,problem::SigmoidalProgram; kwargs...)
 end
 
 ## Branching rule
-function split(n::Node, problem::SigmoidalProgram, verbose=false; kwargs...)
+function split(n::Node, problem::SigmoidalProgram, verbose=0; kwargs...)
     i = n.maxdiff_index
     # split at x for x < z; otherwise split at z
     # (this achieves tighter fits on both children when z < x < w)
     splithere = min(n.x[i], problem.z[i])
-    if verbose println("split on coordinate $i at $(n.x[i])") end
+    if verbose>=2 println("split on coordinate $i at $(n.x[i])") end
 
     # left child
     left_u = copy(n.u)
@@ -186,8 +186,9 @@ end
 
 ## Branch and bound
 function solve_sp(l, u, problem::SigmoidalProgram; 
-                  TOL = 1e-2, maxiters = 100, verbose = false)
+                  TOL = 1e-2, maxiters = 100, verbose = 0)
     subtol = TOL/length(l)/10
+    log = DataFrame(iter=[], lb=[], ub=[])
     root = Node(l, u, problem; TOL=subtol)
     if isnan(root.ub)
         error("Problem infeasible")
@@ -201,11 +202,14 @@ function solve_sp(l, u, problem::SigmoidalProgram;
     pq = PriorityQueue{Node, Float64}(Reverse)
     enqueue!(pq, root, root.ub)
     for i=1:maxiters
-        if ubs[end] - lbs[end] < TOL 
-            if verbose
-                println("found solution within tolerance $(ubs[end] - lbs[end]) in $i iterations")
-            end
-            break 
+        if verbose>=1
+            println("iteration: ", i)
+        end
+        push!(log, (i, lbs[end], ubs[end]))
+
+        if ubs[end] - lbs[end] < TOL * lbs[end]
+            println("found solution within tolerance $(ubs[end] - lbs[end]) in $i iterations")
+            break
         end
         node = dequeue!(pq)
         push!(ubs,min(node.ub, ubs[end]))
@@ -220,23 +224,23 @@ function solve_sp(l, u, problem::SigmoidalProgram;
         else 
             push!(lbs,lbs[end])  
         end    
-        if verbose
+        if verbose>=2
             println("(lb, ub) = ($(lbs[end]), $(ubs[end]))")
         end
 
         # prune infeasible or obviously suboptimal nodes
         if !isnan(left.ub) && left.ub >= lbs[end]
             enqueue!(pq, left, left.ub) 
-            if verbose println("enqueued left") end
+            if verbose>=2 println("enqueued left") end
         else
-            if verbose println("pruned left") end
+            if verbose>=2 println("pruned left") end
         end
         if !isnan(right.ub) && right.ub >= lbs[end]
             enqueue!(pq, right, right.ub)
-            if verbose println("enqueued right") end
+            if verbose>=2 println("enqueued right") end
         else
-            if verbose println("pruned right") end
+            if verbose>=2 println("pruned right") end
         end
     end
-    return pq, bestnodes, lbs, ubs
+    return pq, bestnodes, lbs, ubs, log
 end
