@@ -1,9 +1,9 @@
 using JuMP
-using Base, GLPK, DataStructures, MathOptInterface, DataFrames
+using Base, GLPK, DataStructures, MathOptInterface
 import DataStructures: PriorityQueue, enqueue!, dequeue!
 import Base.Order.Reverse
 
-export solve_sp    
+export solve_sp
 
 
 ## utilities
@@ -50,10 +50,10 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
     nvar = length(l)
     maxiters *= nvar
     fs,dfs = problem.fs, problem.dfs
-    
+
     # Define our variables to be inside a box
     @variable(m, x[i=1:nvar])
-    for i=1:nvar 
+    for i=1:nvar
         set_lower_bound(x[i], l[i])
         set_upper_bound(x[i], u[i])
     end
@@ -74,9 +74,9 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
     end
     # Add other problem constraints
     addConstraints!(m, x, problem)
-    
+
     @objective(m, Max, sum(t))
-    
+
     # Now solve and add hypograph constraints until the solution stabilizes
     optimize!(m)
     status = termination_status(m)
@@ -185,10 +185,9 @@ function split(n::Node, problem::SigmoidalProgram, verbose=0; kwargs...)
 end
 
 ## Branch and bound
-function solve_sp(l, u, problem::SigmoidalProgram; 
-                  TOL = 1e-2, maxiters = 100, verbose = 0)
+function solve_sp(l, u, problem::SigmoidalProgram;
+                  TOL = 1e-2, maxiters = 100, verbose = 0, maxiters_noimprovement = Inf)
     subtol = TOL/length(l)/10
-    log = DataFrame(iter=[], lb=[], ub=[])
     root = Node(l, u, problem; TOL=subtol)
     if isnan(root.ub)
         error("Problem infeasible")
@@ -205,7 +204,6 @@ function solve_sp(l, u, problem::SigmoidalProgram;
         if verbose>=1
             println("iteration: ", i)
         end
-        push!(log, (i, lbs[end], ubs[end]))
 
         if ubs[end] - lbs[end] < TOL * lbs[end]
             println("found solution within tolerance $(ubs[end] - lbs[end]) in $i iterations")
@@ -220,17 +218,17 @@ function solve_sp(l, u, problem::SigmoidalProgram;
             push!(bestnodes,left)
         elseif right.lb > lbs[end]
             push!(lbs,right.lb)
-            push!(bestnodes,right)  
-        else 
-            push!(lbs,lbs[end])  
-        end    
+            push!(bestnodes,right)
+        else
+            push!(lbs,lbs[end])
+        end
         if verbose>=2
             println("(lb, ub) = ($(lbs[end]), $(ubs[end]))")
         end
 
         # prune infeasible or obviously suboptimal nodes
         if !isnan(left.ub) && left.ub >= lbs[end]
-            enqueue!(pq, left, left.ub) 
+            enqueue!(pq, left, left.ub)
             if verbose>=2 println("enqueued left") end
         else
             if verbose>=2 println("pruned left") end
@@ -241,6 +239,11 @@ function solve_sp(l, u, problem::SigmoidalProgram;
         else
             if verbose>=2 println("pruned right") end
         end
+
+        # break if no improvement for too long
+        if length(lbs) > maxiters_noimprovement && lbs[end]==lbs[end-maxiters_noimprovement]
+          break
+        end
     end
-    return pq, bestnodes, lbs, ubs, log
+    return pq, bestnodes, lbs, ubs
 end

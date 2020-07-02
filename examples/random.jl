@@ -1,10 +1,13 @@
 ## Let's solve a random problem
 using SigmoidalProgramming
+using Random
+import DataStructures: dequeue!
 
 # problem data
-srand(4)
+Random.seed!(4)
 nvar = 200
-nconstr = 20
+nconstr = 40
+
 l = -rand(nvar)
 u = rand(nvar)
 A = rand(nconstr, nvar)
