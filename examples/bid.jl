@@ -46,7 +46,9 @@ function bidding(nvar=500; problemtype=:paper)
     return pq, bestnodes, lbs, ubs
 end
 
-for size=[1,10,20,50,100,500,1000,2000,5000,10000]
-    println("bidding $size")
-    bidding(size)
-end
+# for size=[1,10,20,50,100,500,1000,2000,5000,10000]
+#     println("bidding $size")
+#     bidding(size)
+# end
+
+pq, bestnodes, lbs, ubs = bidding(20)

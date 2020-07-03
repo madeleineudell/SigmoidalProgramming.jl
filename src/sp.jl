@@ -1,5 +1,6 @@
 using JuMP
 using Base, GLPK, DataStructures, MathOptInterface
+import MathOptInterface: VariablePrimalStart
 import DataStructures: PriorityQueue, enqueue!, dequeue!
 import Base.Order.Reverse
 
@@ -43,39 +44,50 @@ function bisection(f, a, b, tol=1e-9, maxiters=1000)
     return (b-a)/2
 end
 
+function model_problem(l, u, w, problem::SigmoidalProgram,
+                       m = Model(optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF)))
+   nvar = length(l)
+   fs,dfs = problem.fs, problem.dfs
+
+   # Define our variables to be inside a box
+   @variable(m, x[i=1:nvar])
+   for i=1:nvar
+       set_lower_bound(x[i], l[i])
+       set_upper_bound(x[i], u[i])
+   end
+   # epigraph variable
+   @variable(m, t[i=1:nvar])
+
+   # Require that t be in the hypograph of fhat, approximating as pwl function
+   # At first, we add only the bit of fhat from l to w, and the tangent at u
+   for i=1:nvar
+       if w[i] > l[i]
+           slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
+           offsetatl = fs[i](l[i])
+           @constraint(m, t[i] <= offsetatl + slopeatl*(x[i] - l[i]))
+       else
+           @constraint(m, t[i] <= fs[i](l[i]) + dfs[i](l[i])*(x[i] - l[i]))
+       end
+       @constraint(m, t[i] <= fs[i](u[i]) + dfs[i](u[i])*(x[i] - u[i]))
+   end
+   # Add other problem constraints
+   addConstraints!(m, x, problem)
+
+   @objective(m, Max, sum(t))
+   return m
+end
+
 ## maximize concave hull
 function maximize_fhat(l, u, w, problem::SigmoidalProgram,
-                       m = Model(optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF));
+                       m = model_problem(l, u, w, problem);
                        maxiters = 10, TOL = 1e-6, verbose=0)
+                       # init_x=zeros(length(l))) # GLPK doesn't allow initialization, but could be useful for other solvers
+
     nvar = length(l)
     maxiters *= nvar
     fs,dfs = problem.fs, problem.dfs
-
-    # Define our variables to be inside a box
-    @variable(m, x[i=1:nvar])
-    for i=1:nvar
-        set_lower_bound(x[i], l[i])
-        set_upper_bound(x[i], u[i])
-    end
-    # epigraph variable
-    @variable(m, t[i=1:nvar])
-
-    # Require that t be in the hypograph of fhat, approximating as pwl function
-    # At first, we add only the bit of fhat from l to w, and the tangent at u
-    for i=1:nvar
-        if w[i] > l[i]
-            slopeatl = (fs[i](w[i]) - fs[i](l[i]))/(w[i] - l[i])
-            offsetatl = fs[i](l[i])
-            @constraint(m, t[i] <= offsetatl + slopeatl*(x[i] - l[i]))
-        else
-            @constraint(m, t[i] <= fs[i](l[i]) + dfs[i](l[i])*(x[i] - l[i]))
-        end
-        @constraint(m, t[i] <= fs[i](u[i]) + dfs[i](u[i])*(x[i] - u[i]))
-    end
-    # Add other problem constraints
-    addConstraints!(m, x, problem)
-
-    @objective(m, Max, sum(t))
+    x = m[:x]
+    t = m[:t]
 
     # Now solve and add hypograph constraints until the solution stabilizes
     optimize!(m)
@@ -134,10 +146,13 @@ struct Node
     lb::Float64
     ub::Float64
     maxdiff_index::Int64
-    function Node(l,u,w,problem; kwargs...)
+    m # JUMP model
+    function Node(l,u,w,problem,
+                  m = model_problem(l, u, w, problem);
+                  kwargs...)
         nvar = length(l)
         # find upper and lower bounds
-        x, t, status = maximize_fhat(l, u, w, problem; kwargs...)
+        x, t, status = maximize_fhat(l, u, w, problem, m; kwargs...)
         if status==MathOptInterface.TerminationStatusCode(1)
             s = Float64[problem.fs[i](x[i]) for i=1:nvar]
             ub = sum(t)
@@ -146,7 +161,7 @@ struct Node
         else
             ub = -Inf; lb = -Inf; maxdiff_index = 1
         end
-        new(l,u,w,x,lb,ub,maxdiff_index)
+        new(l,u,w,x,lb,ub,maxdiff_index,m)
     end
 end
 
@@ -168,6 +183,14 @@ function split(n::Node, problem::SigmoidalProgram, verbose=0; kwargs...)
     splithere = min(n.x[i], problem.z[i])
     if verbose>=2 println("split on coordinate $i at $(n.x[i])") end
 
+    # this does not correctly copy the model; left and right node contaminate each other
+    # if model can only be reused for one node, it's more valuable to reuse it for the right node, since left node only has one constraint
+    # right_m = copy(n.m)
+    # set_optimizer(right_m, optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF))
+    # left_m = copy(n.m)
+    # set_optimizer(left_m, optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF))
+    # left_m = n.m
+
     # left child
     left_u = copy(n.u)
     left_u[i] = splithere
@@ -180,7 +203,7 @@ function split(n::Node, problem::SigmoidalProgram, verbose=0; kwargs...)
     right_l[i] = splithere
     right_w = copy(n.w)
     right_w[i] = find_w(problem.fs[i],problem.dfs[i],right_l[i],n.u[i],problem.z[i])
-    right = Node(right_l, n.u, right_w, problem; kwargs...)
+    right = Node(right_l, n.u, right_w, problem, n.m; kwargs...)
     return left, right
 end
 
