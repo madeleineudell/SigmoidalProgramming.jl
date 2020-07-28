@@ -241,16 +241,17 @@ function solve_sp(l, u, problem::SigmoidalProgram, init_x=Nothing;
                   TOL = 1e-2, maxiters = 100, verbose = 0, maxiters_noimprovement = Inf)
     subtol = TOL/length(l)/10
     root = Node(l, u, problem, init_x; TOL=subtol)
-    if isnan(root.ub)
-        error("Problem infeasible")
-    end
     bestnodes = Node[]
     ubs = Float64[]
     lbs = Float64[]
+    pq = PriorityQueue{Node, Float64}(Reverse)
+    if isnan(root.ub)
+        println("Problem infeasible")
+        return pq, bestnodes, lbs, ubs, 4
+    end
     push!(bestnodes,root)
     push!(ubs,root.ub)
     push!(lbs,root.lb)
-    pq = PriorityQueue{Node, Float64}(Reverse)
     enqueue!(pq, root, root.ub)
     for i=1:maxiters
         if verbose>=1
