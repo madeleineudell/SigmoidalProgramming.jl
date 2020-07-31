@@ -180,7 +180,6 @@ struct Node
         else
             x, t, status = maximize_fhat(l, u, w, problem, m; kwargs...)
             if status==MathOptInterface.OPTIMAL
-                x[x .< 0] .=0
                 x = max.(x, l)
                 s = Float64[problem.fs[i](x[i]) for i=1:nvar]
                 ub = sum(t)
