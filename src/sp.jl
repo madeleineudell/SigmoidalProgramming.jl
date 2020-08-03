@@ -113,7 +113,10 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
     t = m[:t]
 
     # Now solve and add hypograph constraints until the solution stabilizes
-    optimize!(m)
+    try
+        optimize!(m)
+    catch y
+    end
     status = termination_status(m)
 
     for i=1:maxiters
@@ -137,7 +140,10 @@ function maximize_fhat(l, u, w, problem::SigmoidalProgram,
                 if verbose>=2 println("solved problem to within $TOL in $i iterations") end
                 break
             else
-                optimize!(m)
+                try
+                    optimize!(m)
+                catch y
+                end
                 status = termination_status(m)
             end
         else
