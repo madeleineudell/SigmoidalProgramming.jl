@@ -238,7 +238,7 @@ function split(n::Node, problem::SigmoidalProgram, verbose=0; kwargs...)
     right_w = copy(n.w)
     right_w[i] = find_w(problem.fs[i],problem.dfs[i],right_l[i],n.u[i],problem.z[i])
     #right = Node(right_l, n.u, right_w, problem, Nothing, n.m; kwargs...)
-    right = Node(right_l, n.u, right_w, problem, Nothing; kwargs...)
+    right = Node(right_l, n.u, right_w, problem; kwargs...)
     return left, right
 end
 
