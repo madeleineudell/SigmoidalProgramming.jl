@@ -40,8 +40,8 @@ function bisection(f, a, b, tol=1e-9, maxiters=1000)
             b = mid
         end
     end
-    warn("hit maximum iterations in bisection search")
-    return (b-a)/2
+    @warn "hit maximum iterations in bisection search"
+    return (b+a)/2
 end
 
 
