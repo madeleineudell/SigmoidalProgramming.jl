@@ -2,8 +2,8 @@
 
 <!-- [![Build Status](https://travis-ci.org/madeleineudell/SigmoidalPrograming.jl.svg?branch=master)](https://travis-ci.org/madeleineudell/SigmoidalPrograming.jl) -->
 
-SigmoidalProgramming is a Julia package for solving [sigmoidal programming problems](http://www.stanford.edu/~udell/doc/max_sum_sigmoids.pdf).
-It solves problems using a branch and bound method described [here](http://www.stanford.edu/~udell/doc/max_sum_sigmoids.pdf),
+SigmoidalProgramming is a Julia package for solving [sigmoidal programming problems](https://web.archive.org/web/20150912012141/http://web.stanford.edu/~udell/doc/max_sum_sigmoids.pdf).
+It solves problems using a branch and bound method described [here](https://web.archive.org/web/20150912012141/http://web.stanford.edu/~udell/doc/max_sum_sigmoids.pdf),
 and solves the convex subproblems using a cutting plane method.
 
 Usage examples can be found in the examples directory.
