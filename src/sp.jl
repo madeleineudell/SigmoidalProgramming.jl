@@ -64,7 +64,7 @@ end
 
 
 function model_problem(l, u, w, problem::SigmoidalProgram,
-                       m = Model(optimizer_with_attributes(GLPK.Optimizer,"tm_lim" => 60000, "msg_lev" => GLPK.MSG_OFF)))
+                       m = Model(optimizer_with_attributes(GLPK.Optimizer, "tm_lim" => 60000, MOI.Silent() => true)))
    # Clp solver also works with the following syntax
    # m = Model(optimizer_with_attributes(Clp.Optimizer, "LogLevel" => 0))
 
